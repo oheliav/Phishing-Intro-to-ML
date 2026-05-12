@@ -1,6 +1,6 @@
-phishing-env/
+venv/
 __pycache__/
 *.csv
 *.pyc
 .DS_Store
-venv/
+*.ipynb_checkpoints
