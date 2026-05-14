@@ -7,11 +7,12 @@
 
 import os
 import joblib
+import copy
 import numpy as np
 from sklearn.model_selection import GridSearchCV, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 import lightgbm as lgb
-
+from sklearn.neural_network import MLPClassifier
 from config import RANDOM_SEED
 
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
@@ -105,7 +106,6 @@ def tuneNNWeightDecay(X_merged, y_merged):
     Selected via 10-fold CV on X_merged.
     Retrains best model on full X_merged.
     """
-    from sklearn.neural_network import MLPClassifier
 
     best = {}
 
@@ -146,33 +146,22 @@ def tuneNNWeightDecay(X_merged, y_merged):
     return final, best
 
 
-def trainNNEarlyStopping(X_train, y_train, X_val, y_val):
-    """
-    Early stopping regularization for NN.
-    Trains on D_train, monitors E_val at each iteration.
-    Stops when val loss does not improve for 10 consecutive iterations.
-    Outputs weights w_t* with minimum validation error.
-    Per the book (Section 7.4.2): do NOT retrain on full data after finding t*.
-    """
+def trainNNEarlyStopping(X_merged, y_merged):
     from sklearn.neural_network import MLPClassifier
 
     model = MLPClassifier(
         hidden_layer_sizes=(32,),
         activation="relu",
         early_stopping=True,
-        validation_fraction=len(y_val) / (len(y_train) + len(y_val)),
+        validation_fraction=0.2,
         n_iter_no_change=10,
         max_iter=500,
         random_state=RANDOM_SEED,
     )
-
-    import pandas as pd
-    X_combined = pd.concat([X_train, X_val])
-    y_combined = pd.concat([y_train, y_val])
-    model.fit(X_combined, y_combined)
+    model.fit(np.array(X_merged), np.array(y_merged))
 
     print(f"[NN Early Stopping] Stopped at iteration: {model.n_iter_}")
-    print(f"[NN Early Stopping] Best val score: {model.best_validation_score_:.4f}")
+    print(f"[NN Early Stopping] Best val accuracy: {model.best_validation_score_:.4f}")
 
     joblib.dump(model, os.path.join(MODELS_DIR, "nn_es.pkl"))
     print(f"[NN Early Stopping] Saved.")
