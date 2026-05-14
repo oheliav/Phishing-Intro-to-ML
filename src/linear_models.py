@@ -34,9 +34,6 @@ class LogisticRegressionModel(BaseModel):
         metrics["model"] = self.name
         return metrics
 
-    def tune(self, X_train, y_train) -> dict:
-        raise NotImplementedError
-
 
 class PocketModel(BaseModel):
     """
@@ -93,8 +90,6 @@ class PocketModel(BaseModel):
         metrics["model"] = self.name
         return metrics
 
-    def tune(self, X_train, y_train) -> dict:
-        raise NotImplementedError
 
 
 # =============================================================================
@@ -119,5 +114,3 @@ class MajorityClassModel(BaseModel):
         metrics["model"] = self.name
         return metrics
 
-    def tune(self, X_train, y_train) -> dict:
-        raise NotImplementedError

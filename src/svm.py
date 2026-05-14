@@ -32,9 +32,6 @@ class LinearSVMModel(BaseModel):
         metrics["model"] = self.name
         return metrics
 
-    def tune(self, X_train, y_train) -> dict:
-        raise NotImplementedError
-
 
 class RBFSVMModel(BaseModel):
 
@@ -56,5 +53,3 @@ class RBFSVMModel(BaseModel):
         metrics["model"] = self.name
         return metrics
 
-    def tune(self, X_train, y_train) -> dict:
-        raise NotImplementedError

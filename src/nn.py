@@ -37,6 +37,3 @@ class NeuralNetworkModel(BaseModel):
         metrics = computeMetrics(y, y_pred, y_proba)
         metrics["model"] = self.name
         return metrics
-
-    def tune(self, X_train, y_train) -> dict:
-        raise NotImplementedError

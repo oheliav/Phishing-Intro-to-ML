@@ -1,99 +1,94 @@
 # =============================================================================
 # regularize.py
-# Hyperparameter tuning via full grid search with 10-fold CV.
-# Selects best params by minimizing E_CV (1 - accuracy).
-# Also reports CV AUC as additional metric.
+# Sequential hyperparameter search — one parameter at a time.
+# 10-fold CV, no parallelism. Reports E_CV and AUC mean ± std.
+# Saves best model to models/ directory.
 # =============================================================================
 
+import os
+import joblib
+import numpy as np
 from sklearn.model_selection import GridSearchCV, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.neural_network import MLPClassifier
 import lightgbm as lgb
-import numpy as np
 
 from config import RANDOM_SEED
 
-# -----------------------------------------------------------------------------
-# Parameter Grids
-# -----------------------------------------------------------------------------
+MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
+os.makedirs(MODELS_DIR, exist_ok=True)
 
-RF_PARAM_GRID = {
-    "n_estimators":     [100, 200, 300],
-    "max_depth":        [10, 20, None],
-    "min_samples_leaf": [1, 2, 4],
-    "max_features":     ["sqrt", "log2"],
-}
 
-LGBM_PARAM_GRID = {
-    "n_estimators":      [100, 200, 300],
-    "num_leaves":        [31, 63, 127],
-    "learning_rate":     [0.05, 0.1, 0.2],
-    "min_child_samples": [10, 20, 50],
-}
+def tuneRF(X_merged, y_merged):
+    best = {}
 
-NN_PARAM_GRID = {
-    "alpha":              [0.0001, 0.001, 0.01, 0.1],
-    "learning_rate_init": [0.001, 0.01],
-}
+    for param, values in [
+        ("n_estimators",     [100, 500, 700]),
+        ("max_depth",        [5, 10, 20, None]),
+        ("min_samples_leaf", [1, 2, 4, 8]),
+        ("max_features",     ["sqrt", "log2"]),
+    ]:
+        gs = GridSearchCV(
+            RandomForestClassifier(**best, random_state=RANDOM_SEED),
+            {param: values},
+            cv=10,
+            scoring="accuracy",
+            n_jobs=1,
+        )
+        gs.fit(X_merged, y_merged)
+        best[param] = gs.best_params_[param]
+        std = gs.cv_results_["std_test_score"][gs.best_index_]
+        e_cv = round(1 - gs.best_score_, 4)
+        print(f"Best {param}: {best[param]} | Accuracy: {gs.best_score_:.4f} ± {std:.4f} | E_CV: {e_cv:.4f}")
 
-# -----------------------------------------------------------------------------
-# Estimator Factories
-# -----------------------------------------------------------------------------
+    # Final model with best params, retrain on full X_merged
+    final = RandomForestClassifier(**best, random_state=RANDOM_SEED)
+    final.fit(X_merged, y_merged)
 
-def _makeEstimator(name):
-    if name == "Random Forest":
-        return RandomForestClassifier(random_state=RANDOM_SEED, n_jobs=2)
-    elif name == "LightGBM":
-        return lgb.LGBMClassifier(random_state=RANDOM_SEED, n_jobs=2, verbose=-1)
-    elif name == "NN":
-        return MLPClassifier(hidden_layer_sizes=(32,), activation="relu", random_state=RANDOM_SEED, max_iter=500)
-    raise ValueError(f"Unknown model: {name}")
+    # CV AUC on final model
+    auc = cross_val_score(final, X_merged, y_merged, cv=10, scoring="roc_auc", n_jobs=1)
+    print(f"\n[RF] Final params: {best}")
+    print(f"[RF] CV AUC: {auc.mean():.4f} ± {auc.std():.4f}")
 
-# -----------------------------------------------------------------------------
-# Tuning Function
-# -----------------------------------------------------------------------------
+    joblib.dump(final, os.path.join(MODELS_DIR, "rf_tuned.pkl"))
+    print(f"[RF] Saved.")
+    return final, best
 
-def tuneModel(name, param_grid, X_merged, y_merged):
-    """
-    Full grid search with 10-fold CV on X_merged.
-    Selects best params by minimizing E_CV (1 - accuracy).
-    Also reports CV AUC for the best configuration.
-    Retrains best estimator on full X_merged.
 
-    Args:
-        name       : "Random Forest", "LightGBM", or "NN"
-        param_grid : parameter grid dict
-        X_merged, y_merged : full train+val data
+def tuneLGBM(X_merged, y_merged):
+    best = {}
 
-    Returns:
-        best_estimator, best_params, cv_results dict
-    """
-    gs = GridSearchCV(
-        _makeEstimator(name),
-        param_grid,
-        cv=10,
-        scoring="accuracy",
-        n_jobs=4,
-        refit=True,
-        verbose=1,
-    )
-    gs.fit(X_merged, y_merged)
+    for param, values in [
+        ("num_leaves",        [15, 31, 63, 127]),
+        ("learning_rate",     [0.05, 0.1, 0.2]),
+        ("min_child_samples", [10, 20, 50]),
+    ]:
+        gs = GridSearchCV(
+            lgb.LGBMClassifier(**best, n_estimators=100, random_state=RANDOM_SEED, verbose=-1),
+            {param: values},
+            cv=10,
+            scoring="accuracy",
+            n_jobs=1,
+        )
+        gs.fit(X_merged, y_merged)
+        best[param] = gs.best_params_[param]
+        std = gs.cv_results_["std_test_score"][gs.best_index_]
+        e_cv = round(1 - gs.best_score_, 4)
+        print(f"Best {param}: {best[param]} | Accuracy: {gs.best_score_:.4f} ± {std:.4f} | E_CV: {e_cv:.4f}")
 
-    best_acc = gs.best_score_
-    best_std = gs.cv_results_["std_test_score"][gs.best_index_]
-    e_cv     = round(1 - best_acc, 4)
+    final = lgb.LGBMClassifier(**best, n_estimators=200, random_state=RANDOM_SEED, verbose=-1)
+    final.fit(X_merged, y_merged)
 
-    auc_scores = cross_val_score(gs.best_estimator_, X_merged, y_merged, cv=10, scoring="roc_auc", n_jobs=4)
+    auc = cross_val_score(final, X_merged, y_merged, cv=10, scoring="roc_auc", n_jobs=1)
+    print(f"\n[LightGBM] Final params: {best}")
+    print(f"[LightGBM] CV AUC: {auc.mean():.4f} ± {auc.std():.4f}")
 
-    print(f"\n[{name}] Best params:  {gs.best_params_}")
-    print(f"[{name}] CV Accuracy:  {best_acc:.4f} ± {best_std:.4f}")
-    print(f"[{name}] E_CV:         {e_cv:.4f}")
-    print(f"[{name}] CV AUC:       {auc_scores.mean():.4f} ± {auc_scores.std():.4f}")
+    joblib.dump(final, os.path.join(MODELS_DIR, "lgbm_tuned.pkl"))
+    print(f"[LightGBM] Saved.")
+    return final, best
 
-    return gs.best_estimator_, gs.best_params_, {
-        "cv_accuracy": round(best_acc, 4),
-        "cv_std":      round(best_std, 4),
-        "e_cv":        e_cv,
-        "cv_auc":      round(auc_scores.mean(), 4),
-        "params":      gs.best_params_,
-    }
+
+def loadModel(name):
+    path = os.path.join(MODELS_DIR, f"{name}.pkl")
+    model = joblib.load(path)
+    print(f"Loaded {name} from {path}")
+    return model
