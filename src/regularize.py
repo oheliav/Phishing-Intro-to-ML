@@ -32,7 +32,7 @@ def tuneRF(X_merged, y_merged):
             {param: values},
             cv=10,
             scoring="accuracy",
-            n_jobs=1,
+            n_jobs=-1,
         )
         gs.fit(X_merged, y_merged)
         best[param] = gs.best_params_[param]
@@ -45,7 +45,7 @@ def tuneRF(X_merged, y_merged):
     final.fit(X_merged, y_merged)
 
     # CV AUC on final model
-    auc = cross_val_score(final, X_merged, y_merged, cv=10, scoring="roc_auc", n_jobs=1)
+    auc = cross_val_score(final, X_merged, y_merged, cv=10, scoring="roc_auc", n_jobs=-1)
     print(f"\n[RF] Final params: {best}")
     print(f"[RF] CV AUC: {auc.mean():.4f} ± {auc.std():.4f}")
 
@@ -58,16 +58,19 @@ def tuneLGBM(X_merged, y_merged):
     best = {}
 
     for param, values in [
+        ("n_estimators",      [100, 300, 500]),
         ("num_leaves",        [15, 31, 63, 127]),
         ("learning_rate",     [0.05, 0.1, 0.2]),
         ("min_child_samples", [10, 20, 50]),
+        ("reg_alpha",         [0, 0.1, 1.0]),
+        ("reg_lambda",        [0, 0.1, 1.0]),
     ]:
         gs = GridSearchCV(
             lgb.LGBMClassifier(**best, n_estimators=100, random_state=RANDOM_SEED, verbose=-1),
             {param: values},
             cv=10,
             scoring="accuracy",
-            n_jobs=1,
+            n_jobs=-1,
         )
         gs.fit(X_merged, y_merged)
         best[param] = gs.best_params_[param]
@@ -75,10 +78,10 @@ def tuneLGBM(X_merged, y_merged):
         e_cv = round(1 - gs.best_score_, 4)
         print(f"Best {param}: {best[param]} | Accuracy: {gs.best_score_:.4f} ± {std:.4f} | E_CV: {e_cv:.4f}")
 
-    final = lgb.LGBMClassifier(**best, n_estimators=200, random_state=RANDOM_SEED, verbose=-1)
+    final = lgb.LGBMClassifier(**best, random_state=RANDOM_SEED, verbose=-1)
     final.fit(X_merged, y_merged)
 
-    auc = cross_val_score(final, X_merged, y_merged, cv=10, scoring="roc_auc", n_jobs=1)
+    auc = cross_val_score(final, X_merged, y_merged, cv=10, scoring="roc_auc", n_jobs=-1)
     print(f"\n[LightGBM] Final params: {best}")
     print(f"[LightGBM] CV AUC: {auc.mean():.4f} ± {auc.std():.4f}")
 
