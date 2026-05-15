@@ -11,8 +11,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import ConfusionMatrixDisplay
-
-from utils import buildResultsTable, printResultsTable
+import joblib
+from utils import buildResultsTable, printResultsTable, computeMetrics
 
 
 # -----------------------------------------------------------------------------
@@ -64,3 +64,24 @@ def plotConfusionMatrix(model, X, y):
     ax.set_title(f"Confusion Matrix — {model.name}")
     plt.tight_layout()
     plt.show()
+
+
+def evaluateFinal(model_paths: dict, X_test, y_test) -> pd.DataFrame:
+    """
+    Load tuned models from pkl files and evaluate on X_test.
+    model_paths: dict of {name: path_to_pkl}
+    Touches X_test exactly once — final evaluation only.
+    """
+
+    results = []
+    for name, path in model_paths.items():
+        model   = joblib.load(path)
+        y_pred  = model.predict(X_test)        
+        y_proba = model.predict_proba(X_test)[:, 1]
+        metrics = computeMetrics(y_test, y_pred, y_proba)
+        metrics["model"] = name
+        results.append(metrics)
+        print(f"{name} — AUC: {metrics['roc_auc']} | F1: {metrics['f1']} | Acc: {metrics['accuracy']}")
+
+    printResultsTable(results, title="Final Results (Test Set)")
+    return buildResultsTable(results)
